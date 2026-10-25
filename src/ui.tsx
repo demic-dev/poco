@@ -524,12 +524,69 @@ export function CaptureSheet({ visible, onClose, onSave }: { visible: boolean; o
   );
 }
 
+// A month to pick a day from, drawn here: a native picker would need a new build.
+// Days before today can't be picked; nothing is ever overdue.
+function Calendar({ value, weekStart, onChange }: { value?: string; weekStart: number; onChange: (d: string) => void }) {
+  const c = useColors();
+  const today = isoDay();
+  const [month, setMonth] = useState(() => new Date(`${(value ?? today).slice(0, 7)}-01T12:00:00`));
+  const y = month.getFullYear();
+  const m = month.getMonth();
+  const blanks = (new Date(y, m, 1).getDay() - weekStart + 7) % 7;
+  const days = Array.from({ length: new Date(y, m + 1, 0).getDate() }, (_, i) => isoDay(new Date(y, m, i + 1)));
+  const cells = [...Array<undefined>(blanks).fill(undefined), ...days];
+  const names = Array.from({ length: 7 }, (_, i) => new Date(2026, 1, 1 + ((i + weekStart) % 7)).toLocaleDateString('en-GB', { weekday: 'narrow' })); // 1 Feb 2026 is a Sunday
+  const canGoBack = new Date(y, m, 1) > new Date();
+  return (
+    <View style={{ backgroundColor: c.card, borderRadius: 16, padding: 12, gap: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Pressable accessibilityLabel="Previous month" disabled={!canGoBack} onPress={() => setMonth(new Date(y, m - 1, 1))} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: canGoBack ? 1 : 0.3 }}>
+          <Icon name="chevron.left" size={18} color={c.ink} />
+        </Pressable>
+        <Text style={{ fontSize: 17, fontWeight: '600', color: c.ink }}>{month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</Text>
+        <Pressable accessibilityLabel="Next month" onPress={() => setMonth(new Date(y, m + 1, 1))} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="chevron.right" size={18} color={c.ink} />
+        </Pressable>
+      </View>
+      <View style={{ flexDirection: 'row' }}>
+        {names.map((n, i) => (
+          <Text key={i} style={{ width: `${100 / 7}%`, textAlign: 'center', fontSize: 12, color: c.faint }}>{n}</Text>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {cells.map((d, i) => {
+          const on = d === value;
+          const past = !!d && d < today;
+          return (
+            <Pressable
+              key={i}
+              disabled={!d || past}
+              accessibilityRole="button"
+              accessibilityLabel={d && new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+              accessibilityState={{ selected: on, disabled: past }}
+              onPress={() => d && onChange(d)}
+              style={{ width: `${100 / 7}%`, height: 40, alignItems: 'center', justifyContent: 'center' }}
+            >
+              {d && (
+                <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? c.accent : 'transparent', borderWidth: d === today && !on ? 1 : 0, borderColor: c.ring }}>
+                  <Text style={{ fontSize: 15, fontWeight: on ? '600' : '400', color: on ? c.onAccent : past ? c.ring : c.ink }}>{Number(d.slice(8))}</Text>
+                </View>
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 // An inbox line becomes a task: an optional date, and which TODO.md.
-export function TaskSheet({ item, todos, onClose, onMake }: { item?: InboxItem; todos: string[]; onClose: () => void; onMake: (file: string, date?: string) => void }) {
+export function TaskSheet({ item, todos, weekStart, onClose, onMake }: { item?: InboxItem; todos: string[]; weekStart: number; onClose: () => void; onMake: (file: string, date?: string) => void }) {
   const c = useColors();
   const [date, setDate] = useState<string>();
+  const [other, setOther] = useState(false);
   const [file, setFile] = useState('TODO.md');
-  const close = () => (setDate(undefined), setFile('TODO.md'), onClose());
+  const close = () => (setDate(undefined), setOther(false), setFile('TODO.md'), onClose());
   const day = (n: number) => isoDay(new Date(Date.now() + n * 864e5));
   const today = new Date().getDay();
   const saturday = day(((6 - today + 7) % 7) || 7);
@@ -542,7 +599,7 @@ export function TaskSheet({ item, todos, onClose, onMake }: { item?: InboxItem; 
     <Modal visible={!!item} transparent animationType="slide" onRequestClose={close}>
       <Pressable accessibilityLabel="Close" onPress={close} style={{ flex: 1, backgroundColor: 'rgba(20,20,19,0.32)' }} />
       {item && (
-        <View style={{ backgroundColor: c.paper, borderTopLeftRadius: 34, borderTopRightRadius: 34, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40, gap: 18 }}>
+        <ScrollView style={{ flexGrow: 0, maxHeight: '88%', backgroundColor: c.paper, borderTopLeftRadius: 34, borderTopRightRadius: 34 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40, gap: 18 }}>
           <View style={{ gap: 6 }}>
             {item.day && <Text style={{ fontSize: 13, color: c.faint }}>Captured {dayLabel(item.day).replace(/^(Today|Yesterday)$/, (d) => d.toLowerCase())}{item.time ? `, ${item.time}` : ''}</Text>}
             <Text style={{ fontSize: 26, lineHeight: 32, fontWeight: '600', letterSpacing: -0.2, color: c.ink }}>{item.text}</Text>
@@ -557,9 +614,11 @@ export function TaskSheet({ item, todos, onClose, onMake }: { item?: InboxItem; 
             <Text style={{ ...caps, color: c.faint }}>Date — optional</Text>
             <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
               {dates.map(([label, d]) => (
-                <Chip key={label} label={label} selected={date === d} onPress={() => setDate(d)} />
+                <Chip key={label} label={label} selected={!other && date === d} onPress={() => (setOther(false), setDate(d))} />
               ))}
+              <Chip label={other && date ? dayLabel(date) : 'Other…'} selected={other} onPress={() => setOther(true)} />
             </View>
+            {other && <Calendar value={date} weekStart={weekStart} onChange={setDate} />}
           </View>
           {files.length > 1 && (
             <View style={{ gap: 8 }}>
@@ -576,7 +635,7 @@ export function TaskSheet({ item, todos, onClose, onMake }: { item?: InboxItem; 
             <QuietButton label="Leave it in the inbox" onPress={close} />
           </View>
           <Text style={{ fontSize: 13, lineHeight: 18, color: c.faint, textAlign: 'center' }}>Adds a line to {file} and takes it out of the inbox.</Text>
-        </View>
+        </ScrollView>
       )}
     </Modal>
   );

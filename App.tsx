@@ -149,7 +149,9 @@ export default function App() {
   useEffect(() => {
     if (finishedToday && !settings.finished.includes(committed.date!)) changeSettings({ ...settings, finished: [...settings.finished, committed.date!] });
   });
-  const finished = new Set(settings.finished);
+  // Only days done.md agrees on: a remembered day whose done lines are gone (mock data, a reset) loses its stamp.
+  const doneDays = new Set(view.done.map((d) => d.date));
+  const finished = new Set(settings.finished.filter((d) => doneDays.has(d)));
 
   if (account === undefined) return <View style={{ flex: 1, backgroundColor: c.paper }} />;
 
@@ -256,6 +258,7 @@ export default function App() {
       <TaskSheet
         item={task}
         todos={notes.todos}
+        weekStart={settings.weekStart}
         onClose={() => setTask(undefined)}
         onMake={(file, date) => {
           feedback(settings, 'light');
