@@ -7,6 +7,7 @@
   "exclude": [
     "node_modules",
     "src/*.test.ts",
-    "applier"
+    "applier",
+    "assets/src"
   ]
 }

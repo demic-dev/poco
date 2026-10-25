@@ -3,10 +3,11 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
 import PocoNative from '../modules/poco-native';
 import { type Event, type View, isoDay } from './events';
+import { type DoneItem, parseDone } from './days';
 import { type InboxItem, type Task, type Today, parseInbox, parsePropfind, parseToday, parseTodo } from './parse';
 
 export type Account = { server: string; user: string; password: string; folder: string };
-export type Notes = { today: Today; inbox: InboxItem[]; tasks: Task[]; todos: string[]; syncedAt?: number }; // todos: every TODO.md
+export type Notes = { today: Today; inbox: InboxItem[]; tasks: Task[]; done: DoneItem[]; todos: string[]; syncedAt?: number }; // todos: every TODO.md
 
 // SideStore renames the App Group when it re-signs; the native module reads the real one.
 export const shared = new ExtensionStorage(PocoNative.appGroup);
@@ -84,7 +85,7 @@ export function readNotes(): Notes {
     .filter((p) => p.split('/').pop() === 'TODO.md')
     .sort();
   const tasks = todos.flatMap((p) => parseTodo(text(p), p.split('/').slice(0, -1).join('/')));
-  return { today: parseToday(text('today.md')), inbox: parseInbox(text('inbox.md')), tasks, todos, syncedAt };
+  return { today: parseToday(text('today.md')), inbox: parseInbox(text('inbox.md')), tasks, done: parseDone(text('done.md')), todos, syncedAt };
 }
 
 // Walks the notes folder one level at a time. Nextcloud changes a folder's ETag

@@ -34,13 +34,13 @@ export function dayLabel(iso: string, now = new Date()) {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-const time = (ms?: number) => (ms ? new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'never');
+export const time = (ms?: number) => (ms ? new Date(ms).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'never');
 
-function Icon({ name, size = 22, color }: { name: SFSymbol; size?: number; color: string }) {
+export function Icon({ name, size = 22, color }: { name: SFSymbol; size?: number; color: string }) {
   return <SymbolView name={name} size={size} tintColor={color} />;
 }
 
-const caps = { fontSize: 13, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase' } as const;
+export const caps = { fontSize: 13, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase' } as const;
 
 // waiting: events still on the phone; sent: uploaded, not applied yet.
 export type SyncState = { ok?: boolean; error?: string; syncedAt?: number; waiting: number; sent: number };
@@ -54,7 +54,7 @@ export function Ring() {
 }
 
 // The cloud: synced, waiting or offline, never a spinner. Tapping it gives one plain sentence.
-export function Screen({ title, subtitle, sync, onRefresh, children }: { title: string; subtitle: string; sync: SyncState; onRefresh: () => Promise<void>; children: ReactNode }) {
+export function Screen({ title, subtitle, sync, onRefresh, right, children }: { title: string; subtitle: string; sync: SyncState; onRefresh: () => Promise<void>; right?: ReactNode; children: ReactNode }) {
   const c = useColors();
   const [explain, setExplain] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -78,12 +78,12 @@ export function Screen({ title, subtitle, sync, onRefresh, children }: { title: 
           <Text style={{ fontSize: 15, color: c.muted }}>{subtitle}</Text>
           <Text accessibilityRole="header" style={{ fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -0.4, color: c.ink }}>{title}</Text>
         </View>
-        <Pressable accessibilityLabel={sentence} onPress={() => setExplain(!explain)} style={{ minWidth: 44, height: 44, paddingHorizontal: 4, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
+        {right ?? <Pressable accessibilityLabel={sentence} onPress={() => setExplain(!explain)} style={{ minWidth: 44, height: 44, paddingHorizontal: 4, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
           {n > 0 && <Text style={{ fontSize: 13, color: c.faint }}>{n} waiting</Text>}
           <Icon name={sync.ok === false ? 'icloud.slash' : n ? 'icloud' : sync.ok ? 'checkmark.icloud' : 'icloud'} size={24} color={c.faint} />
-        </Pressable>
+        </Pressable>}
       </View>
-      {(explain || sync.ok === false) && (
+      {!right && (explain || sync.ok === false) && (
         <Text style={{ padding: 12, paddingHorizontal: 16, borderRadius: 16, overflow: 'hidden', backgroundColor: c.banner, fontSize: 15, lineHeight: 20, color: c.muted }}>{sentence}</Text>
       )}
       {children}
@@ -91,7 +91,7 @@ export function Screen({ title, subtitle, sync, onRefresh, children }: { title: 
   );
 }
 
-function Card({ children, gap = 20 }: { children: ReactNode; gap?: number }) {
+export function Card({ children, gap = 20 }: { children: ReactNode; gap?: number }) {
   const c = useColors();
   return (
     <View style={{ backgroundColor: c.card, borderRadius: 28, padding: 24, paddingBottom: 20, gap, shadowColor: '#1C1B19', shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 8 } }}>
@@ -110,7 +110,7 @@ function BigButton({ label, icon, onPress, disabled }: { label: string; icon?: S
   );
 }
 
-function QuietButton({ label, onPress }: { label: string; onPress: () => void }) {
+export function QuietButton({ label, onPress }: { label: string; onPress: () => void }) {
   const c = useColors();
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
@@ -297,10 +297,10 @@ export function InboxScreen({ inbox, onItem }: { inbox: InboxItem[]; onItem: (i:
 }
 
 // The daily pick: the only place with the long list. Dated items first, then everything else.
-export function PickScreen({ tasks, files, inboxCount, onClose, onInbox, onStart }: { tasks: Task[]; files: number; inboxCount: number; onClose: () => void; onInbox: () => void; onStart: (chosen: Task[]) => void }) {
+export function PickScreen({ tasks, files, inboxCount, max, onClose, onInbox, onStart }: { tasks: Task[]; files: number; inboxCount: number; max: number; onClose: () => void; onInbox: () => void; onStart: (chosen: Task[]) => void }) {
   const c = useColors();
   const [chosen, setChosen] = useState<Task[]>([]);
-  const full = chosen.length === 3;
+  const full = chosen.length >= max;
   const toggle = (t: Task) => setChosen(chosen.includes(t) ? chosen.filter((x) => x !== t) : full ? chosen : [...chosen, t]);
   const dated = tasks.filter((t) => t.date).sort((a, b) => a.date!.localeCompare(b.date!));
   const rest = tasks.filter((t) => !t.date);
@@ -362,10 +362,10 @@ export function PickScreen({ tasks, files, inboxCount, onClose, onInbox, onStart
         {header}
         <View style={{ gap: 4 }}>
           <Text accessibilityRole="header" style={{ fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -0.4, color: c.ink }}>Pick today</Text>
-          <Text style={{ fontSize: 15, color: c.muted }}>Up to three. The first one you tap is next.</Text>
+          <Text style={{ fontSize: 15, color: c.muted }}>{['Just one.', 'Up to two.', 'Up to three.'][max - 1]} The first one you tap is next.</Text>
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          {[0, 1, 2].map((n) => (
+          {[0, 1, 2].slice(0, max).map((n) => (
             <View key={n} style={{ flex: 1, minHeight: 64, borderRadius: 14, padding: 8, paddingHorizontal: 10, gap: 2, backgroundColor: chosen[n] ? c.card : 'transparent', borderWidth: 1, borderStyle: chosen[n] ? 'solid' : 'dashed', borderColor: chosen[n] ? c.line : c.ring }}>
               <Text style={{ fontSize: 12, fontWeight: '700', color: chosen[n] ? c.accent : c.faint }}>{n === 0 ? 'NEXT' : n + 1}</Text>
               <Text numberOfLines={2} style={{ fontSize: 13, lineHeight: 17, color: c.ink }}>{chosen[n]?.text ?? ''}</Text>
@@ -380,27 +380,10 @@ export function PickScreen({ tasks, files, inboxCount, onClose, onInbox, onStart
         {rest.map(row)}
       </ScrollView>
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 20, paddingTop: 14, paddingBottom: 38, gap: 8, backgroundColor: c.paper, borderTopWidth: 1, borderColor: c.line }}>
-        <BigButton label={chosen.length ? `Start today with ${chosen.length}` : 'Tap up to three'} disabled={!chosen.length} onPress={() => onStart(chosen)} />
-        {full && <Text style={{ textAlign: 'center', fontSize: 13, color: c.faint }}>Three is plenty. Tap one to swap it out.</Text>}
+        <BigButton label={chosen.length ? `Start today with ${chosen.length}` : ['Tap one', 'Tap up to two', 'Tap up to three'][max - 1]} disabled={!chosen.length} onPress={() => onStart(chosen)} />
+        {full && max > 1 && <Text style={{ textAlign: 'center', fontSize: 13, color: c.faint }}>{max === 3 ? 'Three' : 'Two'} is plenty. Tap one to swap it out.</Text>}
       </View>
     </View>
-  );
-}
-
-export function DoneScreen({ account, sync, onEditAccount }: { account: Account; sync: SyncState; onEditAccount: () => void }) {
-  const c = useColors();
-  return (
-    <Card gap={8}>
-      <Text style={{ ...caps, color: c.faint }}>Notes folder</Text>
-      <Text style={{ fontSize: 17, color: c.ink }}>
-        {account.user} · {account.folder}
-      </Text>
-      <Text style={{ fontSize: 15, color: c.muted }}>{account.server}</Text>
-      <Text style={{ fontSize: 15, color: c.muted }}>Last synced {time(sync.syncedAt)}</Text>
-      <Pressable onPress={onEditAccount} style={{ minHeight: 44, justifyContent: 'center' }}>
-        <Text style={{ fontSize: 17, color: c.accent }}>Change connection</Text>
-      </Pressable>
-    </Card>
   );
 }
 

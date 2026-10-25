@@ -2,6 +2,7 @@
 // once as `_events/<id>.json`; the applier on bach turns it into edits.
 // Pure, like parse.ts, so the applier can import it too.
 
+import type { DoneItem } from './days.ts';
 import { type InboxItem, type Task, type Today, type TodayItem, parseInbox, parseTodo } from './parse.ts';
 
 type Base = { id: string; time: string };
@@ -46,13 +47,13 @@ export function captureText(e: { text: string; url?: string; note?: string }) {
 }
 
 export type Pending = { pending?: boolean };
-export type View = { today: { date?: string; items: (TodayItem & Pending)[] }; inbox: (InboxItem & Pending & { capture?: string })[]; tasks: (Task & Pending)[] };
+export type View = { today: { date?: string; items: (TodayItem & Pending)[] }; inbox: (InboxItem & Pending & { capture?: string })[]; tasks: (Task & Pending)[]; done: (DoneItem & Pending)[] };
 
 // The files plus the phone's own events not applied yet, marked pending (the grey ring).
 // Events the files already show are skipped, for the moment between the applier
 // writing a file and deleting the event.
-export function overlay(files: { today: Today; inbox: InboxItem[]; tasks: Task[] }, events: Event[]): View {
-  const v: View = { today: { date: files.today.date, items: [...files.today.items] }, inbox: [...files.inbox], tasks: [...files.tasks] };
+export function overlay(files: { today: Today; inbox: InboxItem[]; tasks: Task[]; done?: DoneItem[] }, events: Event[]): View {
+  const v: View = { today: { date: files.today.date, items: [...files.today.items] }, inbox: [...files.inbox], tasks: [...files.tasks], done: [...(files.done ?? [])] };
   const captures: View['inbox'] = [];
   for (const e of [...events].sort((a, b) => a.id.localeCompare(b.id))) {
     if (e.type === 'capture') {
@@ -83,6 +84,8 @@ export function overlay(files: { today: Today; inbox: InboxItem[]; tasks: Task[]
       const item = v.today.items[i];
       v.today.items[i] = { ...item, done: true, pending: true };
       v.tasks = v.tasks.filter((t) => !(t.text === item.text && t.project === (item.project ?? '')));
+      const date = isoDay(new Date(e.time));
+      if (!v.done.some((d) => d.text === item.text && d.date === date)) v.done.push({ text: item.text, date, project: item.project, pending: true });
     } else if (e.type === 'make-task') {
       const all = [...captures, ...v.inbox];
       const item = all.find((i) => (e.capture ? i.capture === e.capture : i.line === e.line));

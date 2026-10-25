@@ -43,6 +43,7 @@ test('overlay: pick, done, move down, capture, make task', () => {
     ['Fix the brake', false, true],
   ]);
   assert.deepEqual(v.inbox.map((i) => [i.text, i.pending]), [['Buy batteries', true]]);
+  assert.deepEqual(v.done.map((d) => [d.text, d.pending]), [['Call mum', true]]);
   assert.deepEqual(v.tasks.map((t) => [t.text, t.project, t.date, t.pending]), [
     ['Fix the brake', 'bike', '2026-10-31', undefined],
     ['Pump tyres', 'bike', undefined, undefined],

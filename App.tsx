@@ -1,12 +1,16 @@
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as BackgroundTask from 'expo-background-task';
 import * as Haptics from 'expo-haptics';
 import * as TaskManager from 'expo-task-manager';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Linking, Modal, View } from 'react-native';
+import { AppState, Linking, Modal, Pressable, View } from 'react-native';
 import PocoNative from './modules/poco-native';
+import { countByDay, weekOf } from './src/days';
 import { type Event, type NewEvent, overlay, stamp, todoFile } from './src/events';
+import { DoneTab, doneTitle, type Moment, MomentView, SettingsScreen } from './src/rewards';
+import { loadSettings, type Settings, saveSettings } from './src/settings';
 import { type Account, loadAccount, publishWidget, queue, readEvents, readNotes, saveAccount, sync } from './src/sync';
-import { CaptureSheet, DoneScreen, type InboxItem, InboxScreen, isoDay, PickScreen, Screen, SetupScreen, type SyncState, type Tab, TabBar, TaskSheet, Toast, TodayScreen, useColors } from './src/ui';
+import { CaptureSheet, Icon, type InboxItem, InboxScreen, isoDay, PickScreen, Screen, SetupScreen, type SyncState, type Tab, TabBar, TaskSheet, Toast, TodayScreen, useColors } from './src/ui';
 
 const pending = () => {
   const e = readEvents();
@@ -28,6 +32,23 @@ TaskManager.defineTask('sync', async () => {
 
 type Held = { events: Event[]; message: string };
 
+// Sounds follow the silent switch and play over other audio.
+const tick = createAudioPlayer(require('./assets/tick.wav'));
+const chime = createAudioPlayer(require('./assets/chime.wav'));
+setAudioModeAsync({ playsInSilentMode: false, interruptionMode: 'mixWithOthers' }).catch(() => {});
+
+function feedback(settings: Settings, kind: 'light' | 'done' | 'pick') {
+  if (settings.haptics) {
+    if (kind === 'light') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    else if (kind === 'done') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+    else Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+  if (settings.sounds) {
+    const p = kind === 'light' ? tick : chime;
+    p.seekTo(0).then(() => p.play());
+  }
+}
+
 export default function App() {
   const c = useColors();
   const [account, setAccount] = useState<Account | null>();
@@ -39,6 +60,11 @@ export default function App() {
   const [picking, setPicking] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [task, setTask] = useState<InboxItem>();
+  const [settings, setSettings] = useState(loadSettings);
+  const [showSettings, setShowSettings] = useState(false);
+  const [doneList, setDoneList] = useState(false);
+  const [moment, setMoment] = useState<Moment>();
+  const changeSettings = (s: Settings) => (setSettings(s), saveSettings(s));
 
   // Undo never sends anything: an event waits here 5 seconds before it's queued.
   const [held, setHeld] = useState<Held>();
@@ -113,8 +139,17 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  const view = overlay(notes, [...events.waiting, ...events.sent, ...(held?.events ?? [])]);
+  const queued = [...events.waiting, ...events.sent];
+  const view = overlay(notes, [...queued, ...(held?.events ?? [])]);
   useEffect(() => publishWidget(view));
+
+  // A day whose picks were all done gets its stamp or flower; only today.md knows, so the phone keeps the list.
+  const committed = overlay(notes, queued).today;
+  const finishedToday = committed.date === isoDay() && committed.items.length > 0 && committed.items.every((i) => i.done);
+  useEffect(() => {
+    if (finishedToday && !settings.finished.includes(committed.date!)) changeSettings({ ...settings, finished: [...settings.finished, committed.date!] });
+  });
+  const finished = new Set(settings.finished);
 
   if (account === undefined) return <View style={{ flex: 1, backgroundColor: c.paper }} />;
 
@@ -149,8 +184,25 @@ export default function App() {
             tasks={view.tasks}
             onPick={() => setPicking(true)}
             onDone={(i) => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
-              hold([stamp({ type: 'done', file: 'today.md', line: i.line })], 'Done');
+              feedback(settings, 'done');
+              const e = stamp({ type: 'done', file: 'today.md', line: i.line });
+              const after = overlay(notes, [...queued, ...(held?.events ?? []), e]);
+              hold([e], 'Done');
+              const day = isoDay();
+              const picks = after.today.date === day ? after.today.items : [];
+              const allDone = picks.length > 0 && picks.every((x) => x.done);
+              if (settings.reward === 'garden') {
+                const week = weekOf(day, settings.weekStart);
+                const counts = countByDay(after.done);
+                setMoment({
+                  kind: 'leaf',
+                  text: i.text,
+                  leaves: week.reduce((n, d) => n + (counts.get(d) ?? 0), 0),
+                  flowers: week.filter((d) => finished.has(d) || (allDone && d === day)).length,
+                  finished: allDone,
+                  next: picks.find((x) => !x.done)?.text,
+                });
+              } else if (allDone) setMoment({ kind: 'stamp', date: day, count: picks.length });
             }}
             onMoveDown={(i) => hold([stamp({ type: 'move-down', date: view.today.date!, line: i.line })], 'Moved down')}
           />
@@ -162,17 +214,38 @@ export default function App() {
         </Screen>
       )}
       {tab === 'done' && (
-        <Screen title="Done" subtitle="Settings live here for now" sync={state} onRefresh={pull}>
-          <DoneScreen account={account} sync={state} onEditAccount={() => setEditing(true)} />
+        <Screen
+          title="Done"
+          subtitle={doneTitle(settings, view.done, finished, doneList)}
+          sync={state}
+          onRefresh={pull}
+          right={
+            <Pressable accessibilityRole="button" accessibilityLabel="Settings" onPress={() => setShowSettings(true)} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="slider.horizontal.3" size={24} color={c.faint} />
+            </Pressable>
+          }
+        >
+          <DoneTab done={view.done} finished={finished} settings={settings} list={doneList} onList={setDoneList} />
         </Screen>
       )}
       {held && <Toast message={held.message} onUndo={undo} />}
+      <MomentView moment={moment} onClose={() => setMoment(undefined)} onUndo={held ? () => (undo(), setMoment(undefined)) : undefined} />
+      <SettingsScreen
+        visible={showSettings}
+        settings={settings}
+        onChange={changeSettings}
+        onClose={() => setShowSettings(false)}
+        account={account}
+        syncedAt={status.syncedAt}
+        waiting={state.waiting + state.sent}
+        onEditAccount={() => (setShowSettings(false), setEditing(true))}
+      />
       <TabBar tab={tab} onTab={setTab} onCapture={() => setCapturing(true)} />
       <CaptureSheet
         visible={capturing}
         onClose={() => setCapturing(false)}
         onSave={(text, toTodo) => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          feedback(settings, 'light');
           const capture = stamp({ type: 'capture', text });
           if (!toTodo) return hold([capture], 'Saved to inbox');
           // A millisecond later, so the applier, going in name order, sees the capture first.
@@ -185,7 +258,7 @@ export default function App() {
         todos={notes.todos}
         onClose={() => setTask(undefined)}
         onMake={(file, date) => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          feedback(settings, 'light');
           hold([stamp({ type: 'make-task', file, date, ...(task!.capture ? { capture: task!.capture } : { line: task!.line }) })], `Added to ${file}`);
         }}
       />
@@ -193,11 +266,12 @@ export default function App() {
         <PickScreen
           tasks={pickable}
           files={notes.todos.length}
+          max={settings.maxPicks}
           inboxCount={view.inbox.length}
           onClose={() => setPicking(false)}
           onInbox={() => (setPicking(false), setTab('inbox'))}
           onStart={(chosen) => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            feedback(settings, 'pick');
             send({ type: 'pick', date: isoDay(), items: chosen.map((t) => ({ file: todoFile(t.project), line: t.line })) });
             setPicking(false);
           }}
