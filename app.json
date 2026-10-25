@@ -12,6 +12,9 @@
         "com.apple.security.application-groups": [
           "group.dev.demic.poco"
         ]
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -29,6 +32,12 @@
     "plugins": [
       "@bacons/apple-targets"
     ],
-    "scheme": "poco"
+    "scheme": "poco",
+    "extra": {
+      "eas": {
+        "projectId": "b4b824af-6205-4c2d-ba1f-fcecd67b3784"
+      }
+    },
+    "owner": "demic_dev"
   }
 }

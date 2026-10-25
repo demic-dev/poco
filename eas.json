@@ -2,6 +2,7 @@
   "cli": { "appVersionSource": "local" },
   "build": {
     "sideload": {
+      "node": "24.21.0",
       "ios": { "withoutCredentials": true, "config": "sideload.yml" }
     }
   }
