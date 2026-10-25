@@ -125,12 +125,13 @@ export async function refresh(account: Account): Promise<void> {
       allow,
     );
 
-  // Upload: same name, same bytes, so sending twice is harmless. 409 means no `_events/` yet.
+  // Upload: same name, same bytes, so sending twice is harmless. Nextcloud answers 404
+  // (the spec says 409) while `_events/` doesn't exist yet.
   for (const f of jsonFiles(outbox)) {
-    const put = () => request(`_events/${f.name}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: f.textSync() }, [409]);
+    const put = () => request(`_events/${f.name}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: f.textSync() }, [404, 409]);
     if ((await put()) === null) {
       await request('_events/', { method: 'MKCOL' }, [405]); // 405: made meanwhile
-      if ((await put()) === null) throw new Error('PUT _events: HTTP 409');
+      if ((await put()) === null) throw new Error(`PUT _events/${f.name}: no _events folder`);
     }
     sent.create({ intermediates: true, idempotent: true });
     f.moveSync(new File(sent, f.name), { overwrite: true });
