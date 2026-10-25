@@ -12,7 +12,7 @@
         let pkgs = nixpkgs.legacyPackages.${system};
         in {
           default = pkgs.mkShell {
-            packages = [ pkgs.nodejs_24 ];
+            packages = [ pkgs.nodejs_24 pkgs.librsvg ];
           };
         });
     };

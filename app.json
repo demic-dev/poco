@@ -15,7 +15,13 @@
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon-dark.png",
+        "tinted": "./assets/icon-tinted.png"
+      },
+      "deploymentTarget": "18.0"
     },
     "android": {
       "adaptiveIcon": {
@@ -32,7 +38,29 @@
     "plugins": [
       "@bacons/apple-targets",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      "expo-background-task",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 120,
+          "backgroundColor": "#F7F6F2",
+          "dark": {
+            "image": "./assets/splash-dark.png",
+            "backgroundColor": "#141413"
+          }
+        }
+      ],
+      "./plugins/with-shortcuts",
+      "expo-asset"
     ],
     "scheme": "poco",
     "extra": {
@@ -40,6 +68,12 @@
         "projectId": "b4b824af-6205-4c2d-ba1f-fcecd67b3784"
       }
     },
-    "owner": "demic_dev"
+    "owner": "demic_dev",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b4b824af-6205-4c2d-ba1f-fcecd67b3784"
+    }
   }
 }

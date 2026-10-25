@@ -6,6 +6,7 @@ build:
     - eas/checkout
     - eas/install_node_modules
     - eas/prebuild
+    - eas/configure_eas_update
     - run:
         name: Install pods
         working_directory: ./ios
@@ -24,7 +25,9 @@ build:
           set -e
           app=build/Build/Products/Release-iphoneos/poco.app
           find "$app" -depth \( -name '*.framework' -o -name '*.dylib' \) -exec codesign -f -s - {} \;
-          codesign -f -s - --entitlements .targets/widget/generated.entitlements "$app"/PlugIns/*.appex
+          for ext in "$app"/PlugIns/*.appex; do
+            codesign -f -s - --entitlements ".targets/$(basename "$ext" .appex)/generated.entitlements" "$ext"
+          done
           codesign -f -s - --entitlements poco/poco.entitlements "$app"
           codesign -d --entitlements - "$app" "$app"/PlugIns/*.appex
           mkdir -p Payload && cp -R "$app" Payload/ && zip -qr ../poco.ipa Payload

@@ -33,12 +33,14 @@ export default function App() {
     return () => sub.remove();
   }, [pull]);
 
-  // The widget shows Next (phase 5 gives it its real look).
-  const next = notes.today.date === isoDay() ? notes.today.items.find((i) => !i.done) : undefined;
+  // The widget and the "What's next" shortcut read this (targets/widget/_shared/Poco.swift).
+  const picked = notes.today.date === isoDay() ? notes.today.items : [];
+  const next = picked.find((i) => !i.done);
+  const widget = picked.length ? JSON.stringify({ date: notes.today.date, next: next?.text, done: picked.filter((i) => i.done).length, total: picked.length }) : undefined;
   useEffect(() => {
-    shared.set('value', next?.text ?? 'Nothing next');
+    shared.set('today', widget);
     ExtensionStorage.reloadWidget();
-  }, [next?.text]);
+  }, [widget]);
 
   if (account === undefined) return <View style={{ flex: 1, backgroundColor: c.paper }} />;
 

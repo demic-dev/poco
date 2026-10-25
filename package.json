@@ -5,10 +5,17 @@
   "dependencies": {
     "@bacons/apple-targets": "^5.0.0",
     "expo": "~58.0.19",
+    "expo-asset": "~58.0.18",
+    "expo-audio": "~58.0.10",
+    "expo-background-task": "~58.0.11",
     "expo-file-system": "~58.0.11",
     "expo-font": "~58.0.10",
+    "expo-haptics": "~58.0.7",
     "expo-secure-store": "~58.0.2",
+    "expo-splash-screen": "~58.0.11",
     "expo-symbols": "~58.0.4",
+    "expo-task-manager": "~58.0.12",
+    "expo-updates": "~58.0.18",
     "react": "19.3.0",
     "react-native": "0.88.0"
   },
@@ -22,6 +29,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "update": "expo export -p ios --no-bytecode && eas update -p ios --channel sideload --skip-bundler --environment production",
+    "icons": "cd assets && for i in icon icon-dark icon-tinted; do rsvg-convert -w 1024 -h 1024 src/$i.svg -o $i.png; done && for i in splash splash-dark; do rsvg-convert -w 600 src/$i.svg -o $i.png; done",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/*.test.ts"
   },
   "private": true

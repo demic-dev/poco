@@ -1,25 +1,14 @@
 import { ExtensionStorage } from '@bacons/apple-targets';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
+import PocoNative from '../modules/poco-native';
 import { type InboxItem, type Task, type Today, parseInbox, parsePropfind, parseToday, parseTodo } from './parse';
 
 export type Account = { server: string; user: string; password: string; folder: string };
 export type Notes = { today: Today; inbox: InboxItem[]; tasks: Task[]; syncedAt?: number };
 
-// SideStore re-signs with the free Apple ID and renames App Groups to
-// `group.dev.demic.poco.<TEAMID>`, so read the real one from our profile.
-function findAppGroup(): string {
-  const base = 'group.dev.demic.poco';
-  try {
-    const bytes = new File(Paths.bundle, 'embedded.mobileprovision').bytesSync();
-    const raw = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
-    return raw.match(/<string>(group\.dev\.demic\.poco[^<]*)<\/string>/)?.[1] ?? base;
-  } catch {
-    return base;
-  }
-}
-
-export const shared = new ExtensionStorage(findAppGroup());
+// SideStore renames the App Group when it re-signs; the native module reads the real one.
+export const shared = new ExtensionStorage(PocoNative.appGroup);
 
 export async function loadAccount(): Promise<Account | null> {
   const json = await SecureStore.getItemAsync('account');

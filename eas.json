@@ -3,6 +3,7 @@
   "build": {
     "sideload": {
       "node": "24.21.0",
+      "channel": "sideload",
       "ios": { "withoutCredentials": true, "config": "sideload.yml" }
     }
   }
