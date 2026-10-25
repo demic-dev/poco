@@ -1,0 +1,8 @@
+{
+  "cli": { "appVersionSource": "local" },
+  "build": {
+    "sideload": {
+      "ios": { "withoutCredentials": true, "config": "sideload.yml" }
+    }
+  }
+}
