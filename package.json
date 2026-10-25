@@ -20,6 +20,7 @@
     "react-native": "0.88.0"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "@types/react": "~19.3.0",
     "eas-cli": "^25.3.0",
     "typescript": "~6.0.3"

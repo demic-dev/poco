@@ -2,7 +2,7 @@
 // once as `_events/<id>.json`; the applier on bach turns it into edits.
 // Pure, like parse.ts, so the applier can import it too.
 
-import { type InboxItem, type Task, type Today, type TodayItem, parseTodo } from './parse.ts';
+import { type InboxItem, type Task, type Today, type TodayItem, parseInbox, parseTodo } from './parse.ts';
 
 type Base = { id: string; time: string };
 export type Event = Base &
@@ -35,7 +35,15 @@ export function todayLine(t: { text: string; date?: string; project?: string }) 
 
 const pad = (n: number) => String(n).padStart(2, '0');
 export const isoDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const localTime = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+export const localTime = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+// What a capture becomes in inbox.md after the time: `text`, `text: note`, `[text](url): note`. One line.
+export function captureText(e: { text: string; url?: string; note?: string }) {
+  const one = (s?: string) => s?.replace(/\s+/g, ' ').trim();
+  const text = one(e.text) || e.url || '';
+  const note = one(e.note);
+  return (e.url ? `[${text.replace(/[[\]]/g, '')}](${e.url})` : text) + (note ? `: ${note}` : '');
+}
 
 export type Pending = { pending?: boolean };
 export type View = { today: { date?: string; items: (TodayItem & Pending)[] }; inbox: (InboxItem & Pending & { capture?: string })[]; tasks: (Task & Pending)[] };
@@ -48,9 +56,10 @@ export function overlay(files: { today: Today; inbox: InboxItem[]; tasks: Task[]
   const captures: View['inbox'] = [];
   for (const e of [...events].sort((a, b) => a.id.localeCompare(b.id))) {
     if (e.type === 'capture') {
-      if (v.inbox.some((i) => i.text === e.text && i.url === e.url)) continue;
       const t = new Date(e.time);
-      captures.unshift({ day: isoDay(t), time: localTime(t), text: e.text, url: e.url, note: e.note, capture: e.id, pending: true });
+      const [item] = parseInbox(`- ${localTime(t)} ${captureText(e)}`);
+      if (v.inbox.some((i) => i.text === item.text && i.url === item.url)) continue;
+      captures.unshift({ ...item, day: isoDay(t), capture: e.id, pending: true });
     } else if (e.type === 'pick') {
       if (v.today.date !== e.date) v.today = { date: e.date, items: [] };
       for (const { file, line } of e.items) {
@@ -81,7 +90,7 @@ export function overlay(files: { today: Today; inbox: InboxItem[]; tasks: Task[]
       const remove = (list: View['inbox']) => list.filter((i) => i !== item);
       captures.splice(0, captures.length, ...remove(captures));
       v.inbox = remove(v.inbox);
-      const text = item.url ? `[${item.text}](${item.url})` : item.text;
+      const text = item.line!.replace(/^\s*[-*] (\d{1,2}:\d{2}\s+)?/, ''); // as the applier takes it
       const project = projectOf(e.file);
       if (v.tasks.some((t) => t.text === text && t.project === project)) continue;
       v.tasks.push({ text, date: e.date, project, line: `- [ ] ${text}${e.date ? ` (${e.date})` : ''}`, pending: true });
