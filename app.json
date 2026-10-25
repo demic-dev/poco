@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "dev.demic.poco",
       "entitlements": {
@@ -30,7 +30,9 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@bacons/apple-targets"
+      "@bacons/apple-targets",
+      "expo-secure-store",
+      "expo-font"
     ],
     "scheme": "poco",
     "extra": {
