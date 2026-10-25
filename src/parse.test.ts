@@ -27,7 +27,7 @@ test('today.md: date heading, done state, trailing date and project', () => {
 
 test('inbox.md: days, times, links, lines before the first heading', () => {
   const md = '- Idea without a day\n## 2026-10-25\n- 10:21 Ask Ana\n- 09:58 [Bleed brakes](https://example.com/b?x=1): for the bike\n## 2026-10-24\n- [](https://example.com/raw)\n';
-  assert.deepEqual(parseInbox(md), [
+  assert.deepEqual(parseInbox(md).map(({ line, ...i }) => i), [
     { day: undefined, time: undefined, text: 'Idea without a day' },
     { day: '2026-10-25', time: '10:21', text: 'Ask Ana' },
     { day: '2026-10-25', time: '09:58', text: 'Bleed brakes', url: 'https://example.com/b?x=1', note: 'for the bike' },

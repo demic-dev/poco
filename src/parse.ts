@@ -11,7 +11,7 @@ export type Task = {
 export type TodayItem = { text: string; done: boolean; date?: string; project?: string; line: string };
 export type Today = { date?: string; items: TodayItem[] };
 
-export type InboxItem = { day?: string; time?: string; text: string; url?: string; note?: string };
+export type InboxItem = { day?: string; time?: string; text: string; url?: string; note?: string; line?: string }; // line: as written, how make-task names it
 
 export type DavEntry = { path: string; etag: string; dir: boolean };
 
@@ -66,7 +66,7 @@ export function parseInbox(md: string): InboxItem[] {
     const t = text.match(/^(\d{1,2}:\d{2})\s+(.*)$/);
     if (t) text = t[2];
     const link = text.match(/^\[([^\]]*)\]\(([^)\s]+)\)(?::\s*(.*))?$/);
-    return [link ? { day, time: t?.[1], text: link[1] || link[2], url: link[2], note: link[3] } : { day, time: t?.[1], text }];
+    return [link ? { day, time: t?.[1], text: link[1] || link[2], url: link[2], note: link[3], line } : { day, time: t?.[1], text, line }];
   });
 }
 

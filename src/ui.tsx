@@ -1,22 +1,26 @@
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useState, type ReactNode } from 'react';
-import { Linking, Pressable, RefreshControl, ScrollView, Text, TextInput, useColorScheme, View } from 'react-native';
-import type { InboxItem, Task, Today } from './parse';
+import { Linking, Modal, Pressable, RefreshControl, ScrollView, Text, TextInput, useColorScheme, View } from 'react-native';
+import { isoDay, type View as Notes } from './events';
+import type { Task } from './parse';
 import type { Account } from './sync';
+
+export { isoDay };
+type Today = Notes['today'];
+type TodayItem = Today['items'][number];
+export type InboxItem = Notes['inbox'][number];
 
 // "Paper, ink, one green". Green means only "done".
 const light = {
   paper: '#F7F6F2', ink: '#1C1B19', card: '#FFFFFF', muted: '#5F5D57', faint: '#6E6C66', line: '#E4E2DC', ring: '#C9C6BE',
-  accent: '#2E6B57', onAccent: '#FFFFFF', accentSoft: 'rgba(46,107,87,0.10)', banner: '#EFEDE7', bar: 'rgba(255,255,255,0.82)',
+  accent: '#2E6B57', onAccent: '#FFFFFF', accentSoft: 'rgba(46,107,87,0.10)', banner: '#EFEDE7', bar: 'rgba(255,255,255,0.82)', pending: '#8A877F', toast: '#1C1B19', onToast: '#F2F1EC', check: '#7CC2A6',
 };
 const dark: typeof light = {
   paper: '#141413', ink: '#F2F1EC', card: '#1F1E1C', muted: '#A8A6A0', faint: '#A8A6A0', line: '#2C2B29', ring: '#55534E',
-  accent: '#7CC2A6', onAccent: '#10241C', accentSoft: 'rgba(124,194,166,0.14)', banner: '#1F1E1C', bar: 'rgba(44,43,41,0.86)',
+  accent: '#7CC2A6', onAccent: '#10241C', accentSoft: 'rgba(124,194,166,0.14)', banner: '#1F1E1C', bar: 'rgba(44,43,41,0.86)', pending: '#8A877F', toast: '#F2F1EC', onToast: '#1C1B19', check: '#2E6B57',
 };
 export const useColors = () => (useColorScheme() === 'dark' ? dark : light);
 
-const pad = (n: number) => String(n).padStart(2, '0');
-export const isoDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 // Today, Tomorrow, Yesterday, "Tue 27" within a week, else "3 Nov". Never "overdue".
 export function dayLabel(iso: string, now = new Date()) {
@@ -38,17 +42,31 @@ function Icon({ name, size = 22, color }: { name: SFSymbol; size?: number; color
 
 const caps = { fontSize: 13, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase' } as const;
 
-export type SyncState = { ok?: boolean; error?: string; syncedAt?: number };
+// waiting: events still on the phone; sent: uploaded, not applied yet.
+export type SyncState = { ok?: boolean; error?: string; syncedAt?: number; waiting: number; sent: number };
 
-// The cloud: synced or offline, never a spinner. Tapping it gives one plain sentence.
+const changes = (n: number) => (n === 1 ? '1 change is' : `${n} changes are`);
+
+// A grey ring: saved on this phone, not in the files yet. Never a spinner or a colour.
+export function Ring() {
+  const c = useColors();
+  return <View accessibilityRole="image" accessibilityLabel="Saved on this phone, not synced yet" style={{ width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, borderColor: c.pending }} />;
+}
+
+// The cloud: synced, waiting or offline, never a spinner. Tapping it gives one plain sentence.
 export function Screen({ title, subtitle, sync, onRefresh, children }: { title: string; subtitle: string; sync: SyncState; onRefresh: () => Promise<void>; children: ReactNode }) {
   const c = useColors();
   const [explain, setExplain] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const n = sync.waiting + sync.sent;
   const sentence =
     sync.ok === false
-      ? `Can't reach Nextcloud (${sync.error}). Showing the copy from ${time(sync.syncedAt)}.`
-      : `Synced at ${time(sync.syncedAt)}.`;
+      ? `Offline since ${time(sync.syncedAt)}. Everything works${n ? ` — ${changes(n)} saved on this phone and will sync later` : ''}. (${sync.error})`
+      : sync.waiting
+        ? `${changes(sync.waiting)} saved on this phone, sending now.`
+        : sync.sent
+          ? `Sent. Your files will show ${sync.sent === 1 ? 'it' : 'them'} once the server applies ${sync.sent === 1 ? 'it' : 'them'}.`
+          : `Everything synced at ${time(sync.syncedAt)}.`;
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.paper }}
@@ -60,8 +78,9 @@ export function Screen({ title, subtitle, sync, onRefresh, children }: { title: 
           <Text style={{ fontSize: 15, color: c.muted }}>{subtitle}</Text>
           <Text accessibilityRole="header" style={{ fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -0.4, color: c.ink }}>{title}</Text>
         </View>
-        <Pressable accessibilityLabel={sentence} onPress={() => setExplain(!explain)} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name={sync.ok === false ? 'icloud.slash' : sync.ok ? 'checkmark.icloud' : 'icloud'} size={24} color={c.faint} />
+        <Pressable accessibilityLabel={sentence} onPress={() => setExplain(!explain)} style={{ minWidth: 44, height: 44, paddingHorizontal: 4, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
+          {n > 0 && <Text style={{ fontSize: 13, color: c.faint }}>{n} waiting</Text>}
+          <Icon name={sync.ok === false ? 'icloud.slash' : n ? 'icloud' : sync.ok ? 'checkmark.icloud' : 'icloud'} size={24} color={c.faint} />
         </Pressable>
       </View>
       {(explain || sync.ok === false) && (
@@ -81,11 +100,36 @@ function Card({ children, gap = 20 }: { children: ReactNode; gap?: number }) {
   );
 }
 
-function BigButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+function BigButton({ label, icon, onPress, disabled }: { label: string; icon?: SFSymbol; onPress: () => void; disabled?: boolean }) {
   const c = useColors();
   return (
-    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={{ height: 56, borderRadius: 28, backgroundColor: c.accent, opacity: disabled ? 0.4 : 1, alignItems: 'center', justifyContent: 'center' }}>
+    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={{ height: 56, borderRadius: 28, backgroundColor: c.accent, opacity: disabled ? 0.4 : 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
+      {icon && <Icon name={icon} size={20} color={c.onAccent} />}
       <Text style={{ color: c.onAccent, fontSize: 17, fontWeight: '600' }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function QuietButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const c = useColors();
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ fontSize: 15, color: c.muted }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function Chip({ label, selected, icon, onPress }: { label: string; selected: boolean; icon?: SFSymbol; onPress: () => void }) {
+  const c = useColors();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={{ minHeight: 40, paddingHorizontal: 16, borderRadius: 20, flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: c.card, borderWidth: selected ? 1.5 : 1, borderColor: selected ? c.ink : c.line }}
+    >
+      {icon && <Icon name={icon} size={16} color={selected ? c.ink : c.muted} />}
+      <Text style={{ fontSize: 15, fontWeight: selected ? '600' : '400', color: selected ? c.ink : c.muted }}>{label}</Text>
     </Pressable>
   );
 }
@@ -100,7 +144,7 @@ function Meta({ icon, text }: { icon: SFSymbol; text: string }) {
   );
 }
 
-export function TodayScreen({ today, tasks, onPick }: { today: Today; tasks: Task[]; onPick: () => void }) {
+export function TodayScreen({ today, tasks, onPick, onDone, onMoveDown }: { today: Today; tasks: Task[]; onPick: () => void; onDone: (i: TodayItem) => void; onMoveDown: (i: TodayItem) => void }) {
   const c = useColors();
   const picked = today.date === isoDay() ? today.items : [];
 
@@ -142,6 +186,7 @@ export function TodayScreen({ today, tasks, onPick }: { today: Today; tasks: Tas
               <View key={i.line} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 40 }}>
                 <Icon name="checkmark" size={16} color={c.accent} />
                 <Text style={{ flex: 1, fontSize: 15, color: c.muted }}>{i.text}</Text>
+                {i.pending && <Ring />}
               </View>
             ))}
           </View>
@@ -156,7 +201,6 @@ export function TodayScreen({ today, tasks, onPick }: { today: Today; tasks: Tas
   const rest = [...picked.filter((i) => i !== next && !i.done), ...picked.filter((i) => i.done)];
   return (
     <>
-      {/* ponytail: read-only build; Done and "Not now" arrive with events (phase 3) */}
       <Card>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <Text style={{ ...caps, color: c.accent }}>Next</Text>
@@ -171,15 +215,28 @@ export function TodayScreen({ today, tasks, onPick }: { today: Today; tasks: Tas
             {next.project && <Meta icon="folder" text={next.project} />}
           </View>
         )}
+        <View style={{ gap: 4, paddingTop: 8 }}>
+          <BigButton label="Done" icon="checkmark" onPress={() => onDone(next)} />
+          {rest.some((i) => !i.done) && <QuietButton label="Not now — move it down" onPress={() => onMoveDown(next)} />}
+        </View>
       </Card>
       {rest.length > 0 && (
         <View style={{ paddingHorizontal: 4 }}>
           <Text style={{ ...caps, color: c.faint, paddingBottom: 6 }}>After that</Text>
           {rest.map((i, n) => (
-            <View key={i.line} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 48, borderBottomWidth: n < rest.length - 1 ? 1 : 0, borderColor: c.line }}>
+            <Pressable
+              key={i.line}
+              disabled={i.done}
+              accessibilityRole="button"
+              accessibilityState={{ checked: i.done }}
+              accessibilityHint={i.done ? undefined : 'Marks it done'}
+              onPress={() => onDone(i)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 48, borderBottomWidth: n < rest.length - 1 ? 1 : 0, borderColor: c.line }}
+            >
               {i.done ? <Icon name="checkmark" size={18} color={c.accent} /> : <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: c.ring }} />}
               <Text style={{ flex: 1, fontSize: 17, color: i.done ? c.faint : c.muted, textDecorationLine: i.done ? 'line-through' : 'none' }}>{i.text}</Text>
-            </View>
+              {i.pending && <Ring />}
+            </Pressable>
           ))}
         </View>
       )}
@@ -187,7 +244,7 @@ export function TodayScreen({ today, tasks, onPick }: { today: Today; tasks: Tas
   );
 }
 
-export function InboxScreen({ inbox }: { inbox: InboxItem[] }) {
+export function InboxScreen({ inbox, onItem }: { inbox: InboxItem[]; onItem: (i: InboxItem) => void }) {
   const c = useColors();
   if (!inbox.length) {
     return (
@@ -211,8 +268,9 @@ export function InboxScreen({ inbox }: { inbox: InboxItem[] }) {
         {g.items.map((i, k) => (
           <Pressable
             key={k}
-            disabled={!i.url}
-            onPress={() => i.url && Linking.openURL(i.url)}
+            accessibilityRole="button"
+            accessibilityHint="Make it a task"
+            onPress={() => onItem(i)}
             style={{ flexDirection: 'row', gap: 12, paddingVertical: 14, borderBottomWidth: k < g.items.length - 1 ? 1 : 0, borderColor: c.line }}
           >
             <Icon name={i.url ? 'link' : 'text.alignleft'} size={18} color={c.faint} />
@@ -225,7 +283,12 @@ export function InboxScreen({ inbox }: { inbox: InboxItem[] }) {
                 </Text>
               )}
             </View>
-            {i.time && <Text style={{ fontSize: 13, color: c.faint, lineHeight: 22 }}>{i.time}</Text>}
+            {(i.time || i.pending) && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 22 }}>
+                {i.pending && <Ring />}
+                {i.time && <Text style={{ fontSize: 13, color: c.faint }}>{i.time}</Text>}
+              </View>
+            )}
           </Pressable>
         ))}
       </View>
@@ -234,7 +297,7 @@ export function InboxScreen({ inbox }: { inbox: InboxItem[] }) {
 }
 
 // The daily pick: the only place with the long list. Dated items first, then everything else.
-export function PickScreen({ tasks, files, inboxCount, onClose, onInbox }: { tasks: Task[]; files: number; inboxCount: number; onClose: () => void; onInbox: () => void }) {
+export function PickScreen({ tasks, files, inboxCount, onClose, onInbox, onStart }: { tasks: Task[]; files: number; inboxCount: number; onClose: () => void; onInbox: () => void; onStart: (chosen: Task[]) => void }) {
   const c = useColors();
   const [chosen, setChosen] = useState<Task[]>([]);
   const full = chosen.length === 3;
@@ -317,9 +380,8 @@ export function PickScreen({ tasks, files, inboxCount, onClose, onInbox }: { tas
         {rest.map(row)}
       </ScrollView>
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: 20, paddingTop: 14, paddingBottom: 38, gap: 8, backgroundColor: c.paper, borderTopWidth: 1, borderColor: c.line }}>
-        {/* ponytail: read-only build; the pick event arrives in phase 3 */}
-        <BigButton label={chosen.length ? `Start today with ${chosen.length}` : 'Tap up to three'} disabled onPress={onClose} />
-        <Text style={{ textAlign: 'center', fontSize: 13, color: c.faint }}>{full ? 'Three is plenty. Tap one to swap it out.' : 'This build doesn’t save the pick yet.'}</Text>
+        <BigButton label={chosen.length ? `Start today with ${chosen.length}` : 'Tap up to three'} disabled={!chosen.length} onPress={() => onStart(chosen)} />
+        {full && <Text style={{ textAlign: 'center', fontSize: 13, color: c.faint }}>Three is plenty. Tap one to swap it out.</Text>}
       </View>
     </View>
   );
@@ -387,28 +449,152 @@ export function SetupScreen({ initial, onSave, onCancel }: { initial?: Account; 
 
 export type Tab = 'today' | 'inbox' | 'done';
 
-export function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+export function TabBar({ tab, onTab, onCapture }: { tab: Tab; onTab: (t: Tab) => void; onCapture: () => void }) {
   const c = useColors();
   const tabs: [Tab, string, SFSymbol][] = [
     ['today', 'Today', 'sun.max'],
     ['inbox', 'Inbox', 'tray'],
     ['done', 'Done', 'checkmark.circle'],
   ];
-  // ponytail: the round capture button joins the bar in phase 3
   return (
-    <View style={{ position: 'absolute', left: 16, right: 16, bottom: 30, height: 62, borderRadius: 31, padding: 4, flexDirection: 'row', backgroundColor: c.bar, borderWidth: 1, borderColor: c.line, shadowColor: '#1C1B19', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 8 } }}>
-      {tabs.map(([id, label, icon]) => (
-        <Pressable
-          key={id}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: tab === id }}
-          onPress={() => onTab(id)}
-          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: 27, backgroundColor: tab === id ? c.accentSoft : 'transparent' }}
-        >
-          <Icon name={icon} size={22} color={tab === id ? c.accent : c.muted} />
-          <Text style={{ fontSize: 10, fontWeight: tab === id ? '600' : '500', color: tab === id ? c.accent : c.muted }}>{label}</Text>
-        </Pressable>
-      ))}
+    <View style={{ position: 'absolute', left: 16, right: 16, bottom: 30, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+      <View style={{ flex: 1, height: 62, borderRadius: 31, padding: 4, flexDirection: 'row', backgroundColor: c.bar, borderWidth: 1, borderColor: c.line, shadowColor: '#1C1B19', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 8 } }}>
+        {tabs.map(([id, label, icon]) => (
+          <Pressable
+            key={id}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === id }}
+            onPress={() => onTab(id)}
+            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: 27, backgroundColor: tab === id ? c.accentSoft : 'transparent' }}
+          >
+            <Icon name={icon} size={22} color={tab === id ? c.accent : c.muted} />
+            <Text style={{ fontSize: 10, fontWeight: tab === id ? '600' : '500', color: tab === id ? c.accent : c.muted }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Capture"
+        onPress={onCapture}
+        style={{ width: 62, height: 62, borderRadius: 31, backgroundColor: c.toast, alignItems: 'center', justifyContent: 'center', shadowColor: '#1C1B19', shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 8 } }}
+      >
+        <Icon name="plus" size={26} color={c.onToast} />
+      </Pressable>
     </View>
+  );
+}
+
+// "Saved to inbox · Undo": the event waits on the phone while this shows.
+export function Toast({ message, onUndo }: { message: string; onUndo: () => void }) {
+  const c = useColors();
+  return (
+    <View accessibilityRole="alert" style={{ position: 'absolute', left: 16, right: 16, bottom: 108, minHeight: 56, borderRadius: 28, backgroundColor: c.toast, flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 20, paddingRight: 8, shadowColor: '#1C1B19', shadowOpacity: 0.25, shadowRadius: 15, shadowOffset: { width: 0, height: 10 } }}>
+      <Icon name="checkmark" size={20} color={c.check} />
+      <Text style={{ flex: 1, fontSize: 15, color: c.onToast }}>{message}</Text>
+      <Pressable accessibilityRole="button" onPress={onUndo} style={{ minHeight: 44, paddingHorizontal: 14, justifyContent: 'center' }}>
+        <Text style={{ fontSize: 15, fontWeight: '600', color: c.onToast }}>Undo</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+// No title, tags or folder. Return saves; swiping the sheet down drops it.
+export function CaptureSheet({ visible, onClose, onSave }: { visible: boolean; onClose: () => void; onSave: (text: string, toTodo: boolean) => void }) {
+  const c = useColors();
+  const [text, setText] = useState('');
+  const [toTodo, setToTodo] = useState(false);
+  const close = () => (setText(''), setToTodo(false), onClose());
+  const save = () => {
+    if (text.trim()) onSave(text.trim(), toTodo);
+    close();
+  };
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
+      <View style={{ flex: 1, backgroundColor: c.paper, paddingHorizontal: 20, paddingTop: 12, gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Pressable onPress={close} style={{ minHeight: 44, justifyContent: 'center' }}>
+            <Text style={{ fontSize: 17, color: c.muted }}>Cancel</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" disabled={!text.trim()} onPress={save} style={{ minHeight: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: c.accent, opacity: text.trim() ? 1 : 0.4, justifyContent: 'center' }}>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: c.onAccent }}>Save</Text>
+          </Pressable>
+        </View>
+        <Text style={{ ...caps, color: c.faint, paddingTop: 12 }}>{toTodo ? 'To TODO.md' : 'To inbox'}</Text>
+        <TextInput
+          accessibilityLabel="Capture"
+          autoFocus
+          multiline
+          value={text}
+          onChangeText={setText}
+          submitBehavior="submit"
+          returnKeyType="done"
+          onSubmitEditing={save}
+          selectionColor={c.accent}
+          style={{ fontSize: 26, lineHeight: 32, fontWeight: '500', letterSpacing: -0.2, color: c.ink, minHeight: 96, padding: 0 }}
+        />
+        <View style={{ flexDirection: 'row', paddingTop: 4 }}>
+          <Chip label="Straight to todo" icon="checklist" selected={toTodo} onPress={() => setToTodo(!toTodo)} />
+        </View>
+        <Text style={{ fontSize: 13, color: c.faint, paddingTop: 6 }}>Return saves. Swipe down to drop it.</Text>
+      </View>
+    </Modal>
+  );
+}
+
+// An inbox line becomes a task: an optional date, and which TODO.md.
+export function TaskSheet({ item, todos, onClose, onMake }: { item?: InboxItem; todos: string[]; onClose: () => void; onMake: (file: string, date?: string) => void }) {
+  const c = useColors();
+  const [date, setDate] = useState<string>();
+  const [file, setFile] = useState('TODO.md');
+  const close = () => (setDate(undefined), setFile('TODO.md'), onClose());
+  const day = (n: number) => isoDay(new Date(Date.now() + n * 864e5));
+  const today = new Date().getDay();
+  const saturday = day(((6 - today + 7) % 7) || 7);
+  const monday = day(((8 - today) % 7) || 7);
+  const dates: [string, string | undefined][] = [['No date', undefined], ['Tomorrow', day(1)]];
+  if (saturday !== day(1)) dates.push([dayLabel(saturday), saturday]);
+  if (monday !== day(1)) dates.push(['Next week', monday]);
+  const files = todos.includes('TODO.md') ? todos : ['TODO.md', ...todos];
+  return (
+    <Modal visible={!!item} transparent animationType="slide" onRequestClose={close}>
+      <Pressable accessibilityLabel="Close" onPress={close} style={{ flex: 1, backgroundColor: 'rgba(20,20,19,0.32)' }} />
+      {item && (
+        <View style={{ backgroundColor: c.paper, borderTopLeftRadius: 34, borderTopRightRadius: 34, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40, gap: 18 }}>
+          <View style={{ gap: 6 }}>
+            {item.day && <Text style={{ fontSize: 13, color: c.faint }}>Captured {dayLabel(item.day).replace(/^(Today|Yesterday)$/, (d) => d.toLowerCase())}{item.time ? `, ${item.time}` : ''}</Text>}
+            <Text style={{ fontSize: 26, lineHeight: 32, fontWeight: '600', letterSpacing: -0.2, color: c.ink }}>{item.text}</Text>
+            {item.url && (
+              <Pressable onPress={() => Linking.openURL(item.url!)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Icon name="link" size={16} color={c.accent} />
+                <Text style={{ fontSize: 15, color: c.accent }}>{item.url.replace(/^\w+:\/\/(www\.)?/, '').split(/[/?#]/)[0]}</Text>
+              </Pressable>
+            )}
+          </View>
+          <View style={{ gap: 8 }}>
+            <Text style={{ ...caps, color: c.faint }}>Date — optional</Text>
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              {dates.map(([label, d]) => (
+                <Chip key={label} label={label} selected={date === d} onPress={() => setDate(d)} />
+              ))}
+            </View>
+          </View>
+          {files.length > 1 && (
+            <View style={{ gap: 8 }}>
+              <Text style={{ ...caps, color: c.faint }}>In</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {files.map((f) => (
+                  <Chip key={f} label={f === 'TODO.md' ? 'Loose tasks' : f.replace(/\/TODO\.md$/, '')} selected={file === f} onPress={() => setFile(f)} />
+                ))}
+              </ScrollView>
+            </View>
+          )}
+          <View style={{ gap: 4, paddingTop: 6 }}>
+            <BigButton label="Make it a task" icon="checklist" onPress={() => (onMake(file, date), close())} />
+            <QuietButton label="Leave it in the inbox" onPress={close} />
+          </View>
+          <Text style={{ fontSize: 13, lineHeight: 18, color: c.faint, textAlign: 'center' }}>Adds a line to {file} and takes it out of the inbox.</Text>
+        </View>
+      )}
+    </Modal>
   );
 }
