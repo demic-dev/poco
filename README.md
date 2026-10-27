@@ -2,7 +2,7 @@
 
 An iPhone app for a folder of Markdown notes in Nextcloud: capture into `inbox.md`, pick one to three things for the day, mark them done. Named after "poco a poco".
 
-The phone never edits a file. It reads the notes over WebDAV and uploads each action as a small JSON event to `notes/_events/`. The applier, a script on the server, turns events into edits of the Markdown and deletes them.
+The phone never edits a note. It reads the notes over WebDAV and uploads each action as a small JSON event to `notes/_events/`. The applier, a script on the server, turns events into edits of the Markdown and deletes them. The phone's own settings and history are in `notes/.poco/state.json`, the only file it writes besides its events.
 
 ## Layout
 

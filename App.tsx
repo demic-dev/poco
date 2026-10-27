@@ -64,7 +64,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [doneList, setDoneList] = useState(false);
   const [moment, setMoment] = useState<Moment>();
-  const changeSettings = (s: Settings) => (setSettings(s), saveSettings(s));
+  const changeSettings = (s: Settings) => (setSettings(s), saveSettings(s), pull());
 
   // Undo never sends anything: an event waits here 5 seconds before it's queued.
   const [held, setHeld] = useState<Held>();
@@ -73,7 +73,7 @@ export default function App() {
   useEffect(() => void loadAccount().then(setAccount), []);
   useEffect(() => void BackgroundTask.registerTaskAsync('sync', { minimumInterval: 30 }).catch(() => {}), []);
 
-  const reload = () => (setNotes(readNotes()), setEvents(readEvents()));
+  const reload = () => (setNotes(readNotes()), setEvents(readEvents()), setSettings(loadSettings()));
 
   const pull = useCallback(async () => {
     if (!account) return;
