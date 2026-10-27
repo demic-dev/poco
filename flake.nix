@@ -8,10 +8,11 @@
       lib = nixpkgs.lib;
       forAllSystems = lib.genAttrs [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
 
-      # The applier and the code it shares with the app (the event format, the parsers).
+      # The applier and the code it shares with the app (the event format, the parsers),
+      # plus the drawer's pure parts, so the checks test them too.
       src = lib.fileset.toSource {
         root = ./.;
-        fileset = lib.fileset.unions [ ./src/events.ts ./src/parse.ts ./src/events.test.ts ./src/parse.test.ts ./applier ];
+        fileset = lib.fileset.unions [ ./src/events.ts ./src/parse.ts ./src/notes.ts ./src/events.test.ts ./src/parse.test.ts ./src/notes.test.ts ./applier ];
       };
       applier = pkgs: pkgs.writeShellApplication {
         name = "poco-applier";

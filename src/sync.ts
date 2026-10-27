@@ -5,6 +5,7 @@ import PocoNative from '../modules/poco-native';
 import { type Event, type View, isoDay } from './events';
 import { type DoneItem, parseDone } from './days';
 import { type InboxItem, type Task, type Today, parseInbox, parsePropfind, parseToday, parseTodo } from './parse';
+import { imageLinks, isImage } from './notes';
 import { readLocal, takeRemote, updateLocal, uploaded } from './settings';
 
 export type Account = { server: string; user: string; password: string; folder: string };
@@ -33,20 +34,24 @@ export async function saveAccount(account: Account) {
   await SecureStore.setItemAsync('account', JSON.stringify(account));
 }
 
-// The offline copy: the files we read, under their paths in the notes folder,
-// plus index.json with each file's and folder's ETag.
+// The offline copy: every note and the images they link to, under their paths in the
+// notes folder, plus index.json with the ETag of each one on the phone ('' for a note
+// listed but not downloaded yet), of each folder, and each note's image links.
 const cache = new Directory(Paths.document, 'notes');
 const indexFile = new File(Paths.document, 'index.json');
-type Index = { etags: Record<string, string>; syncedAt?: number };
+type Index = { etags: Record<string, string>; links: Record<string, string[]>; syncedAt?: number };
 
-const wanted = (path: string) => ['inbox.md', 'today.md', 'done.md'].includes(path) || path.split('/').pop() === 'TODO.md';
+const isDir = (path: string) => path === '' || path.endsWith('/'); // '' is the notes folder
 const skipped = (path: string) => path.split('/').some((s) => s.startsWith('.') || s.startsWith('_')); // .git, _events
 
 function readIndex(): Index {
   try {
-    return JSON.parse(indexFile.textSync());
+    const index: Index = JSON.parse(indexFile.textSync());
+    if (index.links) return index;
+    // From before every note was synced: forget the folders so each is walked once.
+    return { etags: Object.fromEntries(Object.entries(index.etags).filter(([k]) => !isDir(k))), links: {}, syncedAt: index.syncedAt };
   } catch {
-    return { etags: {} };
+    return { etags: {}, links: {} };
   }
 }
 
@@ -81,7 +86,7 @@ export function queue(events: Event[]) {
 
 export function readNotes(): Notes {
   const { etags, syncedAt } = readIndex();
-  const text = (path: string) => (path in etags ? cached(path).textSync() : '');
+  const text = (path: string) => (etags[path] ? cached(path).textSync() : '');
   const todos = Object.keys(etags)
     .filter((p) => p.split('/').pop() === 'TODO.md')
     .sort();
@@ -103,13 +108,14 @@ export async function refresh(account: Account): Promise<void> {
   const url = (path: string) => root + path.split('/').map(encodeURIComponent).join('/');
 
   // Throws on a failure, unless its status is in `allow`.
-  async function request(path: string, init: RequestInit, allow: number[] = []) {
+  async function request(path: string, init: RequestInit, allow: number[] = [], binary = false) {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), 15000);
     try {
       const res = await fetch(url(path), { ...init, headers: { ...auth, ...init.headers }, signal: abort.signal });
       if (!res.ok && !allow.includes(res.status)) throw new Error(`${init.method ?? 'GET'} ${path || '/'}: HTTP ${res.status}`);
-      return { ok: res.ok, status: res.status, body: await res.text(), etag: res.headers.get('etag')?.replace(/"/g, '') };
+      const etag = res.headers.get('etag')?.replace(/"/g, '');
+      return { ok: res.ok, status: res.status, etag, bytes: binary ? await res.arrayBuffer() : undefined, body: binary ? '' : await res.text() };
     } finally {
       clearTimeout(timer);
     }
@@ -148,35 +154,69 @@ export async function refresh(account: Account): Promise<void> {
     for (const f of waiting) if (!left.has(f.name)) f.delete();
   }
 
-  const old = readIndex().etags;
-  const next: Record<string, string> = {};
+  const old = readIndex();
+  const listed: Record<string, string> = {}; // files and folders as they are on the server now
+  const walked: string[] = [];
   let poco: string | undefined; // the ETag of `.poco/`, if it exists
 
   async function walk(dir: string) {
     const xml = (await propfind(dir))!;
+    walked.push(dir);
     for (const e of parsePropfind(xml, basePath)) {
-      if (e.path === dir) next[dir] = e.etag;
+      if (e.path === dir) listed[dir] = e.etag;
       else if (e.path === '.poco/') poco = e.etag;
       else if (skipped(e.path)) continue;
-      else if (e.dir && old[e.path] === e.etag) {
-        for (const k in old) if (k.startsWith(e.path)) next[k] = old[k];
+      else if (e.dir && old.etags[e.path] === e.etag) {
+        for (const k in old.etags) if (k.startsWith(e.path)) listed[k] = old.etags[k];
       } else if (e.dir) await walk(e.path);
-      else if (wanted(e.path)) {
-        if (old[e.path] !== e.etag || !cached(e.path).exists) {
-          const f = cached(e.path);
-          const { body } = await request(e.path, {});
-          f.create({ intermediates: true, overwrite: true });
-          await f.write(body);
-        }
-        next[e.path] = e.etag;
-      }
+      else if (e.path.endsWith('.md') || isImage(e.path)) listed[e.path] = e.etag;
     }
   }
-
   await walk('');
-  for (const k in old) if (!(k in next) && !k.endsWith('/') && cached(k).exists) cached(k).delete();
-  indexFile.create({ overwrite: true });
-  await indexFile.write(JSON.stringify({ etags: next, syncedAt: Date.now() } satisfies Index));
+
+  // Every note, then the images in the notes folder they link to. Only notes downloaded
+  // now are searched for image links: the others' are in the index.
+  const etags: Record<string, string> = {};
+  const links: Record<string, string[]> = {};
+  const fresh = (p: string) => !!listed[p] && old.etags[p] === listed[p] && cached(p).exists;
+  async function get(p: string) {
+    const res = await request(p, {}, [], isImage(p));
+    const f = cached(p);
+    f.create({ intermediates: true, overwrite: true });
+    await f.write(res.bytes ?? res.body);
+    etags[p] = listed[p] || res.etag || '';
+    return res.body;
+  }
+
+  // An interrupted sync keeps what it got. The folders it went through count as unseen,
+  // so the next one walks them again; it only downloads what's still missing or old.
+  async function save(complete: boolean) {
+    const index: Record<string, string> = {};
+    for (const p in listed) {
+      if (isDir(p)) index[p] = complete || !walked.includes(p) ? listed[p] : '';
+      else index[p] = etags[p] ?? (cached(p).exists ? (old.etags[p] ?? '') : '');
+    }
+    indexFile.create({ overwrite: true });
+    await indexFile.write(JSON.stringify({ etags: index, links: complete ? links : { ...old.links, ...links }, syncedAt: complete ? Date.now() : old.syncedAt } satisfies Index));
+  }
+
+  try {
+    for (const p in listed) {
+      if (!p.endsWith('.md')) continue;
+      if (fresh(p)) (etags[p] = listed[p]), (links[p] = old.links[p] ?? imageLinks(p, cached(p).textSync())); // ?? for an index from before images
+      else links[p] = imageLinks(p, await get(p));
+    }
+    for (const p of new Set(Object.values(links).flat())) {
+      if (!(p in listed)) continue;
+      if (fresh(p)) etags[p] = listed[p];
+      else await get(p);
+    }
+  } catch (e) {
+    await save(false);
+    throw e;
+  }
+  for (const p in old.etags) if (!isDir(p) && !(p in etags) && cached(p).exists) cached(p).delete(); // gone, or no longer linked
+  await save(true);
 
   // The phone's state (src/settings.ts). Read when `.poco/` changed or there's no copy
   // here yet; our own upload changes `.poco/` too, which costs one PROPFIND next time.
