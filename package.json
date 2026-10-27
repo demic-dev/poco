@@ -16,6 +16,7 @@
     "expo-symbols": "~58.0.4",
     "expo-task-manager": "~58.0.12",
     "expo-updates": "~58.0.18",
+    "marked": "18.1.2",
     "react": "19.3.0",
     "react-native": "0.88.0"
   },

@@ -14,10 +14,13 @@ export type InboxItem = Notes['inbox'][number];
 const light = {
   paper: '#F7F6F2', ink: '#1C1B19', card: '#FFFFFF', muted: '#5F5D57', faint: '#6E6C66', line: '#E4E2DC', ring: '#C9C6BE',
   accent: '#2E6B57', onAccent: '#FFFFFF', accentSoft: 'rgba(46,107,87,0.10)', banner: '#EFEDE7', bar: 'rgba(255,255,255,0.82)', pending: '#8A877F', toast: '#1C1B19', onToast: '#F2F1EC', check: '#7CC2A6',
+  // The notes drawer and a note.
+  drawer: '#F7F6F2', dim: 'rgba(20,20,19,0.30)', field: '#ECEAE4', selected: '#E9E7E1', code: '#ECEAE4', block: '#EFEDE7', blockLine: '#EFEDE7', th: '#F2F0EA', rule: '#DAD7CF', box: '#B9B6AE', link: 'rgba(46,107,87,0.35)',
 };
 const dark: typeof light = {
   paper: '#141413', ink: '#F2F1EC', card: '#1F1E1C', muted: '#A8A6A0', faint: '#A8A6A0', line: '#2C2B29', ring: '#55534E',
   accent: '#7CC2A6', onAccent: '#10241C', accentSoft: 'rgba(124,194,166,0.14)', banner: '#1F1E1C', bar: 'rgba(44,43,41,0.86)', pending: '#8A877F', toast: '#F2F1EC', onToast: '#1C1B19', check: '#2E6B57',
+  drawer: '#1F1E1C', dim: 'rgba(0,0,0,0.5)', field: '#2C2B29', selected: '#2C2B29', code: '#2A2927', block: '#1F1E1C', blockLine: '#2C2B29', th: '#2A2927', rule: '#3A3936', box: '#55534E', link: 'rgba(124,194,166,0.4)',
 };
 export const useColors = () => (useColorScheme() === 'dark' ? dark : light);
 
@@ -53,8 +56,10 @@ export function Ring() {
   return <View accessibilityRole="image" accessibilityLabel="Saved on this phone, not synced yet" style={{ width: 8, height: 8, borderRadius: 4, borderWidth: 1.5, borderColor: c.pending }} />;
 }
 
+export const cloudIcon = (sync: SyncState): SFSymbol => (sync.ok === false ? 'icloud.slash' : sync.waiting + sync.sent ? 'icloud' : sync.ok ? 'checkmark.icloud' : 'icloud');
+
 // The cloud: synced, waiting or offline, never a spinner. Tapping it gives one plain sentence.
-export function Screen({ title, subtitle, sync, onRefresh, right, children }: { title: string; subtitle: string; sync: SyncState; onRefresh: () => Promise<void>; right?: ReactNode; children: ReactNode }) {
+export function Screen({ title, subtitle, sync, onRefresh, onNotes, right, children }: { title: string; subtitle: string; sync: SyncState; onRefresh: () => Promise<void>; onNotes: () => void; right?: ReactNode; children: ReactNode }) {
   const c = useColors();
   const [explain, setExplain] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -73,15 +78,18 @@ export function Screen({ title, subtitle, sync, onRefresh, right, children }: { 
       contentContainerStyle={{ paddingTop: 62, paddingHorizontal: 20, paddingBottom: 130, gap: 16 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => (setRefreshing(true), onRefresh().finally(() => setRefreshing(false)))} />}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 4 }}>
-        <View style={{ gap: 2, flex: 1 }}>
-          <Text style={{ fontSize: 15, color: c.muted }}>{subtitle}</Text>
-          <Text accessibilityRole="header" style={{ fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -0.4, color: c.ink }}>{title}</Text>
-        </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', margin: -14, marginHorizontal: -8, marginBottom: -16 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Notes" onPress={onNotes} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="sidebar.left" size={24} color={c.faint} />
+        </Pressable>
         {right ?? <Pressable accessibilityLabel={sentence} onPress={() => setExplain(!explain)} style={{ minWidth: 44, height: 44, paddingHorizontal: 4, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
           {n > 0 && <Text style={{ fontSize: 13, color: c.faint }}>{n} waiting</Text>}
-          <Icon name={sync.ok === false ? 'icloud.slash' : n ? 'icloud' : sync.ok ? 'checkmark.icloud' : 'icloud'} size={24} color={c.faint} />
+          <Icon name={cloudIcon(sync)} size={24} color={c.faint} />
         </Pressable>}
+      </View>
+      <View style={{ gap: 2, paddingLeft: 4 }}>
+        <Text style={{ fontSize: 15, color: c.muted }}>{subtitle}</Text>
+        <Text accessibilityRole="header" style={{ fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -0.4, color: c.ink }}>{title}</Text>
       </View>
       {!right && (explain || sync.ok === false) && (
         <Text style={{ padding: 12, paddingHorizontal: 16, borderRadius: 16, overflow: 'hidden', backgroundColor: c.banner, fontSize: 15, lineHeight: 20, color: c.muted }}>{sentence}</Text>

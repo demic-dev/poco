@@ -27,3 +27,52 @@ export const imageLinks = (path: string, md: string) =>
     const p = resolve(path, href);
     return p && isImage(p) ? [p] : [];
   });
+
+export type Note = { path: string; here: boolean }; // here: downloaded to the phone
+export type Group = { folder: string; notes: Note[] }; // folder '' holds the loose files at the top
+
+export const folderOf = (path: string) => path.split('/').slice(0, -1).join('/');
+export const nameOf = (path: string) => path.split('/').pop()!.replace(/\.md$/, '');
+// How a note shows inside its group: `meetings/2026-10-14`, or `TODO.md` as it is.
+export const nameIn = (folder: string, path: string) => (path === (folder ? `${folder}/TODO.md` : 'TODO.md') ? 'TODO.md' : path.slice(folder ? folder.length + 1 : 0).replace(/\.md$/, ''));
+
+// Projects are folders with a TODO.md, holding the notes in their subfolders too. The rest
+// go by top-level folder, and the files at the top are "Loose files" (folder ''), last.
+export function groupNotes(notes: Note[]): { projects: Group[]; other: Group[] } {
+  const projects = new Set(notes.filter((n) => n.path.endsWith('/TODO.md')).map((n) => folderOf(n.path)));
+  const groups = new Map<string, Note[]>();
+  for (const n of notes) {
+    const parts = n.path.split('/').slice(0, -1);
+    let folder = parts[0] ?? '';
+    for (let i = parts.length; i > 0; i--) {
+      if (projects.has(parts.slice(0, i).join('/'))) {
+        folder = parts.slice(0, i).join('/');
+        break;
+      }
+    }
+    groups.set(folder, [...(groups.get(folder) ?? []), n]);
+  }
+  const sorted = (folder: string): Group => ({
+    folder,
+    notes: groups.get(folder)!.sort((a, b) => {
+      const [x, y] = [nameIn(folder, a.path), nameIn(folder, b.path)];
+      return x === 'TODO.md' ? -1 : y === 'TODO.md' ? 1 : x.localeCompare(y);
+    }),
+  });
+  const folders = [...groups.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
+  return { projects: folders.filter((f) => projects.has(f)).map(sorted), other: folders.filter((f) => !projects.has(f)).map(sorted) };
+}
+
+// "Find a note": every word in the name or the folder.
+export function findNotes(notes: Note[], query: string) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return notes.filter((n) => words.every((w) => n.path.toLowerCase().replace(/\.md$/, '').includes(w))).sort((a, b) => nameOf(a.path).localeCompare(nameOf(b.path)));
+}
+
+// marked leaves entities as written; a browser would show `&amp;` as `&`.
+const entities: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
+export const decode = (text: string) =>
+  text.replace(/&(?:#(\d+)|#x([\da-f]+)|(\w+));/gi, (m, dec, hex, name) => {
+    const code = dec ? Number(dec) : hex ? parseInt(hex, 16) : undefined;
+    return code !== undefined ? (code <= 0x10ffff ? String.fromCodePoint(code) : m) : (entities[name.toLowerCase()] ?? m);
+  });

@@ -10,6 +10,9 @@ The phone never edits a note. It reads the notes over WebDAV, keeping a copy of 
 App.tsx, src/        the app (Expo, React Native, TypeScript)
 src/events.ts        the event format, shared by the app and the applier
 src/parse.ts         the Markdown parsers, shared too
+src/notes.ts         the notes drawer's groups, links between notes
+src/drawer.tsx       the notes drawer
+src/note.tsx         a note, drawn from marked's tokens
 targets/             Swift: widgets, Control Center control, share extension, Shortcuts
 modules/poco-native  a small native module (App Group, background time)
 plugins/             config plugins for the Swift pieces

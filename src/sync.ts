@@ -94,17 +94,33 @@ export function readNotes(): Notes {
   return { today: parseToday(text('today.md')), inbox: parseInbox(text('inbox.md')), tasks, done: parseDone(text('done.md')), todos, syncedAt };
 }
 
-// Walks the notes folder one level at a time. Nextcloud changes a folder's ETag
-// whenever anything inside it changes, so an unchanged folder is skipped whole,
-// and when nothing changed the refresh is a single PROPFIND.
-export async function refresh(account: Account): Promise<void> {
-  const root = `${account.server.replace(/\/+$/, '')}/remote.php/dav/files/${encodeURIComponent(account.user)}/${account.folder
+// The notes as the drawer lists them: from the index, never their contents.
+export const listNotes = () =>
+  Object.entries(readIndex().etags)
+    .filter(([p]) => p.endsWith('.md'))
+    .map(([path, etag]) => ({ path, here: etag !== '' }));
+
+export const noteText = (path: string) => cached(path).textSync();
+export const cachedUri = (path: string) => (cached(path).exists ? cached(path).uri : undefined);
+
+const davRoot = (account: Account) =>
+  `${account.server.replace(/\/+$/, '')}/remote.php/dav/files/${encodeURIComponent(account.user)}/${account.folder
     .split('/')
     .filter(Boolean)
     .map(encodeURIComponent)
     .join('/')}/`;
+const davAuth = (account: Account) => ({ Authorization: `Basic ${btoa(`${account.user}:${account.password}`)}` });
+
+// A file in the notes folder straight from the server, for an image not on the phone yet.
+export const remoteSource = (account: Account, path: string) => ({ uri: davRoot(account) + path.split('/').map(encodeURIComponent).join('/'), headers: davAuth(account) });
+
+// Walks the notes folder one level at a time. Nextcloud changes a folder's ETag
+// whenever anything inside it changes, so an unchanged folder is skipped whole,
+// and when nothing changed the refresh is a single PROPFIND.
+export async function refresh(account: Account): Promise<void> {
+  const root = davRoot(account);
   const basePath = decodeURIComponent(root.replace(/^https?:\/\/[^/]+/, ''));
-  const auth = { Authorization: `Basic ${btoa(`${account.user}:${account.password}`)}` };
+  const auth = davAuth(account);
   const url = (path: string) => root + path.split('/').map(encodeURIComponent).join('/');
 
   // Throws on a failure, unless its status is in `allow`.

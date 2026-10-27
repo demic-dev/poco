@@ -6,10 +6,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Linking, Modal, Pressable, View } from 'react-native';
 import PocoNative from './modules/poco-native';
 import { countByDay, weekOf } from './src/days';
+import { Drawer } from './src/drawer';
 import { type Event, type NewEvent, overlay, stamp, todoFile } from './src/events';
+import { NoteScreen } from './src/note';
 import { DoneTab, doneTitle, type Moment, MomentView, SettingsScreen } from './src/rewards';
 import { loadSettings, type Settings, saveSettings } from './src/settings';
-import { type Account, loadAccount, publishWidget, queue, readEvents, readNotes, saveAccount, sync } from './src/sync';
+import { type Account, listNotes, loadAccount, publishWidget, queue, readEvents, readNotes, saveAccount, sync } from './src/sync';
 import { CaptureSheet, Icon, type InboxItem, InboxScreen, isoDay, PickScreen, Screen, SetupScreen, type SyncState, type Tab, TabBar, TaskSheet, Toast, TodayScreen, useColors } from './src/ui';
 
 const pending = () => {
@@ -64,6 +66,9 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [doneList, setDoneList] = useState(false);
   const [moment, setMoment] = useState<Moment>();
+  const [files, setFiles] = useState(listNotes);
+  const [drawer, setDrawer] = useState(false);
+  const [note, setNote] = useState<string>();
   const changeSettings = (s: Settings) => (setSettings(s), saveSettings(s), pull());
 
   // Undo never sends anything: an event waits here 5 seconds before it's queued.
@@ -73,7 +78,7 @@ export default function App() {
   useEffect(() => void loadAccount().then(setAccount), []);
   useEffect(() => void BackgroundTask.registerTaskAsync('sync', { minimumInterval: 30 }).catch(() => {}), []);
 
-  const reload = () => (setNotes(readNotes()), setEvents(readEvents()), setSettings(loadSettings()));
+  const reload = () => (setNotes(readNotes()), setEvents(readEvents()), setSettings(loadSettings()), setFiles(listNotes()));
 
   const pull = useCallback(async () => {
     if (!account) return;
@@ -153,6 +158,15 @@ export default function App() {
   const doneDays = new Set(view.done.map((d) => d.date));
   const finished = new Set(settings.finished.filter((d) => doneDays.has(d)));
 
+  // "Last opened" goes up with the next sync, not one upload per note opened.
+  const openNote = (path: string) => {
+    const s = { ...settings, recent: [path, ...settings.recent.filter((p) => p !== path)].slice(0, 3) };
+    setSettings(s);
+    saveSettings(s);
+    setDrawer(false);
+    setNote(path);
+  };
+
   if (account === undefined) return <View style={{ flex: 1, backgroundColor: c.paper }} />;
 
   if (!account || editing) {
@@ -180,7 +194,7 @@ export default function App() {
   return (
     <View style={{ flex: 1, backgroundColor: c.paper }}>
       {tab === 'today' && (
-        <Screen title="Today" subtitle={today} sync={state} onRefresh={pull}>
+        <Screen title="Today" subtitle={today} sync={state} onRefresh={pull} onNotes={() => setDrawer(true)}>
           <TodayScreen
             today={view.today}
             tasks={view.tasks}
@@ -211,7 +225,7 @@ export default function App() {
         </Screen>
       )}
       {tab === 'inbox' && (
-        <Screen title="Inbox" subtitle="Read here, sort on the laptop" sync={state} onRefresh={pull}>
+        <Screen title="Inbox" subtitle="Read here, sort on the laptop" sync={state} onRefresh={pull} onNotes={() => setDrawer(true)}>
           <InboxScreen inbox={view.inbox} onItem={setTask} />
         </Screen>
       )}
@@ -220,7 +234,7 @@ export default function App() {
           title="Done"
           subtitle={doneTitle(settings, view.done, finished, doneList)}
           sync={state}
-          onRefresh={pull}
+          onRefresh={pull} onNotes={() => setDrawer(true)}
           right={
             <Pressable accessibilityRole="button" accessibilityLabel="Settings" onPress={() => setShowSettings(true)} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="slider.horizontal.3" size={24} color={c.faint} />
@@ -243,6 +257,16 @@ export default function App() {
         onEditAccount={() => (setShowSettings(false), setEditing(true))}
       />
       <TabBar tab={tab} onTab={setTab} onCapture={() => setCapturing(true)} />
+      <Drawer open={drawer} onOpen={() => setDrawer(true)} onClose={() => setDrawer(false)} notes={files} recent={settings.recent} current={settings.recent[0]} sync={state} onNote={openNote} />
+      <NoteScreen
+        path={note}
+        here={!!files.find((f) => f.path === note)?.here}
+        offline={status.ok === false}
+        account={account}
+        onBack={() => (setNote(undefined), setDrawer(true))}
+        onClose={() => setNote(undefined)}
+        onNote={openNote}
+      />
       <CaptureSheet
         visible={capturing}
         onClose={() => setCapturing(false)}
